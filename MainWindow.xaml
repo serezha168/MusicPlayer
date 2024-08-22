@@ -1,0 +1,13 @@
+﻿<!-- Views/MainWindow.xaml -->
+<Window x:Class="MusicPlayer.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Music Player" Height="450" Width="800">
+    <Grid>
+        <ListBox Name="TrackList" ItemsSource="{Binding Tracks}" DisplayMemberPath="Title" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+            <Button Content="Play" Command="{Binding PlayCommand}" CommandParameter="{Binding ElementName=TrackList, Path=SelectedItem}" />
+            <Button Content="Stop" Command="{Binding StopCommand}" />
+        </StackPanel>
+    </Grid>
+</Window>
