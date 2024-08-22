@@ -6,45 +6,55 @@ using NAudio.Wave;
 
 namespace MusicPlayer.Services
 {
-    public class MusicService
+    public class MusicService : IMusicService
     {
-        public List<Track> GetTracksFromFolder(string folderPath)
-        {
-            var tracks = new List<Track>();
-            var supportedExtensions = new[] { ".mp3", ".wav", ".ogg" };
+        private readonly List<MusicFile> _musicFiles = new List<MusicFile>();
 
-            var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+        public IEnumerable<MusicFile> GetAllMusicFiles()
+        {
+            return _musicFiles;
+        }
+
+        public void LoadMusicFiles(string directoryPath)
+        {
+            _musicFiles.Clear();
+            var supportedExtensions = new[] { ".mp3", ".wav" };
+
+            var files = Directory.GetFiles(directoryPath)
                 .Where(file => supportedExtensions.Contains(Path.GetExtension(file).ToLower()));
 
             foreach (var file in files)
             {
-                var track = new Track
+                try
                 {
-                    Title = Path.GetFileNameWithoutExtension(file),
-                    Artist = "Unknown", // В будущем можно добавить чтение метаданных
-                    FilePath = file,
-                    Duration = GetAudioFileDuration(file)
-                };
-                tracks.Add(track);
+                    using var reader = new AudioFileReader(file);
+                    var musicFile = new MusicFile
+                    {
+                        Title = Path.GetFileNameWithoutExtension(file),
+                        Artist = "Unknown", // Можно добавить извлечение метаданных здесь
+                        FilePath = file,
+                        Duration = reader.TotalTime
+                    };
+                    _musicFiles.Add(musicFile);
+                }
+                catch (Exception)
+                {
+                    // Логирование ошибки, если файл не может быть прочитан
+                }
             }
-
-            return tracks;
         }
 
-        private TimeSpan GetAudioFileDuration(string filePath)
+        public MusicFile? GetMusicFileByPath(string filePath)
         {
-            using (var reader = new AudioFileReader(filePath))
-            {
-                return reader.TotalTime;
-            }
+            return _musicFiles.FirstOrDefault(m => m.FilePath == filePath);
         }
     }
 
-    public class Track
+    public class MusicFile
     {
-        public string Title { get; set; }
-        public string Artist { get; set; }
-        public string FilePath { get; set; }
+        public required string Title { get; set; }
+        public required string Artist { get; set; }
+        public required string FilePath { get; set; }
         public TimeSpan Duration { get; set; }
     }
 }
