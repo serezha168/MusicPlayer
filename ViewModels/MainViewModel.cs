@@ -1,41 +1,39 @@
+using MusicPlayer.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using MusicPlayer.Models;
-using MusicPlayer.Services;
 
-namespace MusicPlayer.ViewModels
+namespace MusicPlayer
 {
     public class MainViewModel : INotifyPropertyChanged
     {
         private readonly AudioPlayerService _audioPlayerService;
+        private ObservableCollection<Track> _tracks;
         private Track _selectedTrack;
         private bool _isPlaying;
 
-        public MainViewModel()
+        public ObservableCollection<Track> Tracks
         {
-            _audioPlayerService = new AudioPlayerService();
-            Tracks = new ObservableCollection<Track>();
-            LoadTracks();
-
-            PlayCommand = new RelayCommand(Play, CanPlay);
-            StopCommand = new RelayCommand(Stop, CanStop);
+            get => _tracks;
+            set
+            {
+                _tracks = value;
+                OnPropertyChanged();
+            }
         }
-
-        public ObservableCollection<Track> Tracks { get; set; }
 
         public Track SelectedTrack
         {
             get => _selectedTrack;
             set
             {
-                if (_selectedTrack != value)
-                {
-                    _selectedTrack = value;
-                    OnPropertyChanged(nameof(SelectedTrack));
-                    (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                }
+                _selectedTrack = value;
+                OnPropertyChanged();
+                (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
@@ -44,25 +42,26 @@ namespace MusicPlayer.ViewModels
             get => _isPlaying;
             set
             {
-                if (_isPlaying != value)
-                {
-                    _isPlaying = value;
-                    OnPropertyChanged(nameof(IsPlaying));
-                    (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                    (StopCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                }
+                _isPlaying = value;
+                OnPropertyChanged();
+                (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (PauseCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (StopCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
         public ICommand PlayCommand { get; }
+        public ICommand PauseCommand { get; }
         public ICommand StopCommand { get; }
 
-        private void LoadTracks()
+        public MainViewModel(AudioPlayerService audioPlayerService)
         {
-            // Здесь должна быть логика загрузки треков
-            // Пример:
-            Tracks.Add(new Track { Title = "Трек 1", Artist = "Исполнитель 1", FilePath = "path/to/track1.mp3" });
-            Tracks.Add(new Track { Title = "Трек 2", Artist = "Исполнитель 2", FilePath = "path/to/track2.mp3" });
+            _audioPlayerService = audioPlayerService;
+            Tracks = new ObservableCollection<Track>();
+            PlayCommand = new RelayCommand(Play, CanPlay);
+            PauseCommand = new RelayCommand(Pause, CanPause);
+            StopCommand = new RelayCommand(Stop, CanStop);
+            LoadTracks();
         }
 
         private void Play()
@@ -74,9 +73,10 @@ namespace MusicPlayer.ViewModels
             }
         }
 
-        private bool CanPlay()
+        private void Pause()
         {
-            return SelectedTrack != null && !IsPlaying;
+            _audioPlayerService.Pause();
+            IsPlaying = false;
         }
 
         private void Stop()
@@ -85,14 +85,32 @@ namespace MusicPlayer.ViewModels
             IsPlaying = false;
         }
 
-        private bool CanStop()
+        private bool CanPlay() => SelectedTrack != null && !IsPlaying;
+        private bool CanPause() => IsPlaying;
+        private bool CanStop() => IsPlaying;
+
+        private void LoadTracks()
         {
-            return IsPlaying;
+            string musicFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            string[] supportedExtensions = { ".mp3", ".wav", ".ogg" };
+
+            var files = Directory.GetFiles(musicFolder, "*.*", SearchOption.AllDirectories)
+                .Where(file => supportedExtensions.Contains(Path.GetExtension(file).ToLower()));
+
+            foreach (var file in files)
+            {
+                var fileInfo = new FileInfo(file);
+                Tracks.Add(new Track
+                {
+                    Title = Path.GetFileNameWithoutExtension(file),
+                    Artist = "Unknown", // В будущем можно добавить чтение метаданных
+                    FilePath = file
+                });
+            }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
-
-        protected virtual void OnPropertyChanged(string propertyName)
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
@@ -109,21 +127,20 @@ namespace MusicPlayer.ViewModels
             _canExecute = canExecute;
         }
 
+        public bool CanExecute(object parameter) => _canExecute?.Invoke() ?? true;
+
+        public void Execute(object parameter) => _execute();
+
         public event EventHandler CanExecuteChanged;
 
-        public bool CanExecute(object parameter)
-        {
-            return _canExecute == null || _canExecute();
-        }
+        public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+    }
 
-        public void Execute(object parameter)
-        {
-            _execute();
-        }
-
-        public void RaiseCanExecuteChanged()
-        {
-            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
-        }
+    public class Track
+    {
+        public string Title { get; set; }
+        public string Artist { get; set; }
+        public string FilePath { get; set; }
+        public TimeSpan Duration { get; set; }
     }
 }

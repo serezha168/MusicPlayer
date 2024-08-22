@@ -1,32 +1,42 @@
-// Services/MusicService.cs
+using System;
 using System.Collections.Generic;
 using System.IO;
-using TagLib;
-using MusicPlayer.Models;
+using System.Linq;
+using NAudio.Wave;
 
 namespace MusicPlayer.Services
 {
     public class MusicService
     {
-        // ћетод дл€ загрузки треков из указанной директории
-        public List<Track> LoadTracks(string directoryPath)
+        public List<Track> GetTracksFromFolder(string folderPath)
         {
             var tracks = new List<Track>();
-            var files = Directory.GetFiles(directoryPath, "*.mp3");
+            var supportedExtensions = new[] { ".mp3", ".wav", ".ogg" };
+
+            var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                .Where(file => supportedExtensions.Contains(Path.GetExtension(file).ToLower()));
 
             foreach (var file in files)
             {
-                var tagFile = TagLib.File.Create(file);
-                tracks.Add(new Track
+                var track = new Track
                 {
-                    Title = tagFile.Tag.Title ?? "Unknown Title",
-                    Artist = tagFile.Tag.FirstPerformer ?? "Unknown Artist",
-                    Duration = tagFile.Properties.Duration,
-                    FilePath = file
-                });
+                    Title = Path.GetFileNameWithoutExtension(file),
+                    Artist = "Unknown", // ¬ будущем можно добавить чтение метаданных
+                    FilePath = file,
+                    Duration = GetAudioFileDuration(file)
+                };
+                tracks.Add(track);
             }
 
             return tracks;
+        }
+
+        private TimeSpan GetAudioFileDuration(string filePath)
+        {
+            using (var reader = new AudioFileReader(filePath))
+            {
+                return reader.TotalTime;
+            }
         }
     }
 }

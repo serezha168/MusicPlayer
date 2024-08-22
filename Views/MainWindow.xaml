@@ -3,18 +3,16 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:viewModels="clr-namespace:MusicPlayer.ViewModels"
+        xmlns:local="clr-namespace:MusicPlayer"
         mc:Ignorable="d"
         Title="Music Player" Height="450" Width="800">
-
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ListBox Grid.Row="0" 
-                 ItemsSource="{Binding Tracks}" 
+        <ListBox Grid.Row="0" ItemsSource="{Binding Tracks}" 
                  SelectedItem="{Binding SelectedTrack}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
@@ -29,6 +27,7 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
             <Button Content="Play" Command="{Binding PlayCommand}" Margin="5"/>
+            <Button Content="Pause" Command="{Binding PauseCommand}" Margin="5"/>
             <Button Content="Stop" Command="{Binding StopCommand}" Margin="5"/>
         </StackPanel>
     </Grid>

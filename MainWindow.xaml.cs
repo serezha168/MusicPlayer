@@ -1,6 +1,6 @@
 ﻿// Views/MainWindow.xaml.cs
 using System.Windows;
-using MusicPlayer.ViewModels;
+using MusicPlayer;
 
 namespace MusicPlayer
 {
@@ -9,7 +9,15 @@ namespace MusicPlayer
         public MainWindow()
         {
             InitializeComponent();
-            DataContext = new MainViewModel();
+
+            // Создаем экземпляр AudioPlayerService
+            var audioPlayerService = new AudioPlayerService();
+
+            // Создаем экземпляр MainViewModel, передавая ему AudioPlayerService
+            var viewModel = new MainViewModel(audioPlayerService);
+
+            // Устанавливаем DataContext для окна
+            DataContext = viewModel;
         }
     }
 }
