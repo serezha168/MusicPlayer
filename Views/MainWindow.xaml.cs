@@ -1,5 +1,4 @@
 ﻿using System.Windows;
-using System.Windows.Controls;
 
 namespace MusicPlayer
 {
@@ -9,14 +8,6 @@ namespace MusicPlayer
         {
             InitializeComponent();
             DataContext = new MainViewModel();
-        }
-
-        private void Slider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (DataContext is MainViewModel viewModel && !viewModel.IsUpdatingPosition)
-            {
-                viewModel.SetPosition(e.NewValue);
-            }
         }
     }
 }

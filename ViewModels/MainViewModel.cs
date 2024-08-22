@@ -1,107 +1,161 @@
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using NAudio.Wave;
+using TagLib;
 
 namespace MusicPlayer
 {
     public class MainViewModel : INotifyPropertyChanged
     {
-        private WaveOutEvent? outputDevice;
-        private AudioFileReader? audioFile;
-        private bool isPlaying;
-        private double currentPosition;
-        private string? currentTime;
-        private string? totalTime;
-        private double volume = 1.0;
-        private bool isUpdatingPosition;
+        private IWavePlayer _waveOutDevice;
+        private AudioFileReader _audioFileReader;
+        private readonly DispatcherTimer _timer;
+        private MusicFile _selectedMusicFile;
+        private bool _isPlaying;
+        private double _currentPosition;
+        private string _currentTime;
+        private string _totalTime;
+        private float _volume = 1.0f;
+        private string _currentTrackInfo;
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+        public MainViewModel()
+        {
+            MusicFiles = new ObservableCollection<MusicFile>();
+
+            PlayCommand = new RelayCommand(Play, CanPlay);
+            PauseCommand = new RelayCommand(Pause, CanPause);
+            StopCommand = new RelayCommand(Stop, CanStop);
+            OpenFileCommand = new RelayCommand(OpenFile);
+
+            _timer = new DispatcherTimer();
+            _timer.Interval = TimeSpan.FromMilliseconds(100);
+            _timer.Tick += Timer_Tick;
+
+            InitializeAudioDevice();
+        }
+
+        private void InitializeAudioDevice()
+        {
+            try
+            {
+                _waveOutDevice = new WaveOutEvent();
+                _waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка инициализации аудио: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        public ObservableCollection<MusicFile> MusicFiles { get; }
+
+        public MusicFile SelectedMusicFile
+        {
+            get => _selectedMusicFile;
+            set
+            {
+                if (_selectedMusicFile != value)
+                {
+                    _selectedMusicFile = value;
+                    OnPropertyChanged();
+                    (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                }
+            }
+        }
 
         public bool IsPlaying
         {
-            get => isPlaying;
+            get => _isPlaying;
             set
             {
-                if (isPlaying != value)
+                if (_isPlaying != value)
                 {
-                    isPlaying = value;
+                    _isPlaying = value;
                     OnPropertyChanged();
+                    (PlayCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (PauseCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (StopCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 }
             }
         }
 
         public double CurrentPosition
         {
-            get => currentPosition;
+            get => _currentPosition;
             set
             {
-                if (!isUpdatingPosition && Math.Abs(currentPosition - value) > 0.001)
+                if (Math.Abs(_currentPosition - value) > 0.001)
                 {
-                    currentPosition = value;
+                    _currentPosition = value;
                     OnPropertyChanged();
-                    if (audioFile != null)
+                    if (_audioFileReader != null)
                     {
-                        SetPosition(value);
+                        _audioFileReader.Position = (long)(_audioFileReader.Length * value);
                     }
                 }
             }
         }
 
-        public string? CurrentTime
+        public string CurrentTime
         {
-            get => currentTime;
+            get => _currentTime;
             set
             {
-                if (currentTime != value)
+                if (_currentTime != value)
                 {
-                    currentTime = value;
+                    _currentTime = value;
                     OnPropertyChanged();
                 }
             }
         }
 
-        public string? TotalTime
+        public string TotalTime
         {
-            get => totalTime;
+            get => _totalTime;
             set
             {
-                if (totalTime != value)
+                if (_totalTime != value)
                 {
-                    totalTime = value;
+                    _totalTime = value;
                     OnPropertyChanged();
                 }
             }
         }
 
-        public double Volume
+        public float Volume
         {
-            get => volume;
+            get => _volume;
             set
             {
-                if (Math.Abs(volume - value) > 0.001)
+                if (Math.Abs(_volume - value) > 0.001)
                 {
-                    volume = value;
+                    _volume = value;
                     OnPropertyChanged();
-                    if (outputDevice != null)
+                    if (_waveOutDevice != null)
                     {
-                        outputDevice.Volume = (float)value;
+                        _waveOutDevice.Volume = value;
                     }
                 }
             }
         }
 
-        public bool IsUpdatingPosition
+        public string CurrentTrackInfo
         {
-            get => isUpdatingPosition;
+            get => _currentTrackInfo;
             set
             {
-                if (isUpdatingPosition != value)
+                if (_currentTrackInfo != value)
                 {
-                    isUpdatingPosition = value;
+                    _currentTrackInfo = value;
                     OnPropertyChanged();
                 }
             }
@@ -112,123 +166,144 @@ namespace MusicPlayer
         public ICommand StopCommand { get; }
         public ICommand OpenFileCommand { get; }
 
-        public MainViewModel()
+        private void Play()
         {
-            PlayCommand = new RelayCommand(_ => Play(), _ => audioFile != null && !IsPlaying);
-            PauseCommand = new RelayCommand(_ => Pause(), _ => IsPlaying);
-            StopCommand = new RelayCommand(_ => Stop(), _ => audioFile != null);
-            OpenFileCommand = new RelayCommand(_ => OpenFile());
+            if (SelectedMusicFile != null)
+            {
+                try
+                {
+                    if (System.IO.File.Exists(SelectedMusicFile.FilePath))
+                    {
+                        if (_audioFileReader == null || _audioFileReader.FileName != SelectedMusicFile.FilePath)
+                        {
+                            Stop();
+                            _audioFileReader = new AudioFileReader(SelectedMusicFile.FilePath);
+                            _waveOutDevice.Init(_audioFileReader);
+                        }
 
-            outputDevice = new WaveOutEvent();
-            outputDevice.PlaybackStopped += OnPlaybackStopped;
+                        _waveOutDevice.Play();
+                        IsPlaying = true;
+                        UpdateTrackInfo(SelectedMusicFile.FilePath);
+                        _timer.Start();
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Файл не найден: {SelectedMusicFile.FilePath}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при воспроизведении: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
         }
 
-        public void Play()
+        private bool CanPlay() => SelectedMusicFile != null && !IsPlaying;
+
+        private void Pause()
         {
-            if (audioFile == null || outputDevice == null) return;
-
-            outputDevice.Play();
-            IsPlaying = true;
-            StartTimer();
-        }
-
-        public void Pause()
-        {
-            if (audioFile == null || outputDevice == null) return;
-
-            outputDevice.Pause();
+            _waveOutDevice?.Pause();
             IsPlaying = false;
-            StopTimer();
+            _timer.Stop();
         }
 
-        public void Stop()
+        private bool CanPause() => IsPlaying;
+
+        private void Stop()
         {
-            if (audioFile == null || outputDevice == null) return;
-
-            outputDevice.Stop();
+            _waveOutDevice?.Stop();
+            if (_audioFileReader != null)
+            {
+                _audioFileReader.Position = 0;
+            }
             IsPlaying = false;
-            StopTimer();
-            audioFile.Position = 0;
-            UpdatePosition();
+            CurrentPosition = 0;
+            CurrentTime = "00:00";
+            _timer.Stop();
         }
 
-        public void OpenFile()
+        private bool CanStop() => IsPlaying;
+
+        private void OpenFile()
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Audio Files (*.mp3;*.wav)|*.mp3;*.wav|All files (*.*)|*.*"
+                Filter = "MP3 files (*.mp3)|*.mp3|All files (*.*)|*.*",
+                Multiselect = true
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                Stop();
-                DisposeAudio();
-
-                audioFile = new AudioFileReader(openFileDialog.FileName);
-                outputDevice?.Init(audioFile);
-                Volume = 1.0;
-                UpdatePosition();
-                UpdateTotalTime();
+                foreach (string fileName in openFileDialog.FileNames)
+                {
+                    MusicFiles.Add(new MusicFile { Name = System.IO.Path.GetFileName(fileName), FilePath = fileName });
+                }
             }
         }
 
-        public void SetPosition(double position)
+        private void Timer_Tick(object sender, EventArgs e)
         {
-            if (audioFile == null) return;
-
-            var newPosition = (long)(audioFile.Length * position);
-            audioFile.Position = newPosition;
-            UpdatePosition();
+            if (IsPlaying && _audioFileReader != null)
+            {
+                CurrentPosition = (double)_audioFileReader.Position / _audioFileReader.Length;
+                CurrentTime = TimeSpan.FromSeconds(_audioFileReader.CurrentTime.TotalSeconds).ToString(@"mm\:ss");
+                TotalTime = TimeSpan.FromSeconds(_audioFileReader.TotalTime.TotalSeconds).ToString(@"mm\:ss");
+            }
         }
 
-        private void UpdatePosition()
+        private void UpdateTrackInfo(string filePath)
         {
-            if (audioFile == null) return;
-
-            IsUpdatingPosition = true;
-            CurrentPosition = (double)audioFile.Position / audioFile.Length;
-            CurrentTime = TimeSpan.FromSeconds(audioFile.CurrentTime.TotalSeconds).ToString(@"mm\:ss");
-            IsUpdatingPosition = false;
+            try
+            {
+                using (var file = TagLib.File.Create(filePath))
+                {
+                    string artist = string.Join(", ", file.Tag.Performers);
+                    string title = file.Tag.Title;
+                    CurrentTrackInfo = $"{artist} - {title}";
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка при чтении метаданных: {ex.Message}");
+                CurrentTrackInfo = System.IO.Path.GetFileNameWithoutExtension(filePath);
+            }
         }
 
-        private void UpdateTotalTime()
-        {
-            if (audioFile == null) return;
-
-            TotalTime = TimeSpan.FromSeconds(audioFile.TotalTime.TotalSeconds).ToString(@"mm\:ss");
-        }
-
-        private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+        private void OnPlaybackStopped(object sender, StoppedEventArgs e)
         {
             IsPlaying = false;
-            StopTimer();
+            _timer.Stop();
         }
 
-        private System.Timers.Timer? timer;
-
-        private void StartTimer()
-        {
-            timer = new System.Timers.Timer(100);
-            timer.Elapsed += (sender, e) => UpdatePosition();
-            timer.Start();
-        }
-
-        private void StopTimer()
-        {
-            timer?.Stop();
-            timer?.Dispose();
-            timer = null;
-        }
-
-        private void DisposeAudio()
-        {
-            audioFile?.Dispose();
-            audioFile = null;
-        }
-
-        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+    }
+
+    public class MusicFile
+    {
+        public string Name { get; set; }
+        public string FilePath { get; set; }
+    }
+
+    public class RelayCommand : ICommand
+    {
+        private readonly Action _execute;
+        private readonly Func<bool> _canExecute;
+
+        public RelayCommand(Action execute, Func<bool> canExecute = null)
+        {
+            _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+            _canExecute = canExecute;
+        }
+
+        public event EventHandler CanExecuteChanged;
+
+        public bool CanExecute(object parameter) => _canExecute == null || _canExecute();
+
+        public void Execute(object parameter) => _execute();
+
+        public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
 }
