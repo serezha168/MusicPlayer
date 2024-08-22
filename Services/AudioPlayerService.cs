@@ -1,7 +1,7 @@
 using System;
 using NAudio.Wave;
 
-namespace MusicPlayer
+namespace MusicPlayer.Services
 {
     public class AudioPlayerService
     {
